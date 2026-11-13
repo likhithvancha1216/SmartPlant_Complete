@@ -5,7 +5,7 @@ import pandas as pd
 from smartplant.generator import generate_data
 from smartplant.scheduler import run_scheduler
 from smartplant.validation import validate_data, validate_schedule
-
+from smartplant.database import create_database
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -36,6 +36,8 @@ def main():
       {"scenario_id":"GT-005","scenario":"CHANGEOVER_OMITTED","expected_detection":"changeover duration mismatch","description":"A family transition is scheduled without the required setup interval."}
     ])
     gt.to_csv(DATA_DIR/"ground_truth.csv", index=False)
+    # Create relational SQLite database and SQL seed export.
+    create_database()
     manifest = {"seed":20261022,"planning_days":60,"tables":{},"validation":{"data_errors":data_errors,"schedule_errors":schedule_errors},
                 "counts":{"scheduled_operations":len(schedule),"exceptions":len(exceptions)}}
     for path in sorted(DATA_DIR.glob("*.csv")):

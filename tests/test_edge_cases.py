@@ -1,5 +1,7 @@
 
 import pandas as pd
+from pathlib import Path
+import sqlite3
 
 
 def test_ground_truth_has_five_scenarios():
@@ -19,12 +21,11 @@ def test_ground_truth_has_five_scenarios():
 
 
 def test_sqlite_database_contains_all_tables():
-    import sqlite3
-
     connection = sqlite3.connect("data/smartplant.db")
 
     tables = pd.read_sql_query(
-        "SELECT name FROM sqlite_master WHERE type='table'",
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name NOT LIKE 'sqlite_%'",
         connection
     )["name"].tolist()
 
@@ -36,7 +37,5 @@ def test_sqlite_database_contains_all_tables():
 
 
 def test_sql_seed_file_exists():
-    from pathlib import Path
-
     assert Path("data/smartplant_seed.sql").exists()
     assert Path("data/smartplant_seed.sql").stat().st_size > 0
