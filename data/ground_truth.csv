@@ -1,0 +1,6 @@
+scenario_id,scenario,expected_detection,description
+GT-001,MACHINE_OVERLAP,machine overlap,Two operations on the same machine have intersecting occupied intervals.
+GT-002,PRECEDENCE_VIOLATION,precedence violation,A downstream operation starts before its predecessor finishes.
+GT-003,MATERIAL_BEFORE_AVAILABILITY,material unavailable at operation start,An operation starts before its required inventory lot is available.
+GT-004,OUTSIDE_SHIFT,outside shift,An operation is placed outside its machine shift calendar.
+GT-005,CHANGEOVER_OMITTED,changeover duration mismatch,A family transition is scheduled without the required setup interval.

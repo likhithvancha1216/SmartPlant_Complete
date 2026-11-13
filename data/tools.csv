@@ -1,0 +1,5 @@
+tool_id,tool_name,tool_type,quantity_available,lifecycle_state
+TOOL-CUT-001,Shared CUT Tool Pool,CUT,2,ACTIVE
+TOOL-MILL-001,Shared MILL Tool Pool,MILL,2,ACTIVE
+TOOL-DRILL-001,Shared DRILL Tool Pool,DRILL,2,ACTIVE
+TOOL-ASSEMBLE-001,Shared ASSEMBLE Tool Pool,ASSEMBLE,2,ACTIVE

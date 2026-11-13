@@ -1,0 +1,90 @@
+{
+  "seed": 20261022,
+  "planning_days": 60,
+  "tables": {
+    "changeover_matrix.csv": {
+      "rows": 25,
+      "sha256": "1121aba0f7d72e89e525533335d572282db43711aa2d07145457456b26a1e0dd"
+    },
+    "eligible_machines.csv": {
+      "rows": 4000,
+      "sha256": "273c7a211c93fe0558714fe079be240e20ebf22b0ede4168ec290a8a37325973"
+    },
+    "event_history.csv": {
+      "rows": 2000,
+      "sha256": "ae506d3305595b009917e88d2e67648f45f0202c5d00c1bca47b78172237f765"
+    },
+    "ground_truth.csv": {
+      "rows": 5,
+      "sha256": "2bdf5491adf6c4e5abf23701141e0b67947babfa41a81092c2e051e9a43cc4f0"
+    },
+    "inventory_lots.csv": {
+      "rows": 200,
+      "sha256": "5412fd4267cdd033f1df4a2784bda27c87d4d3e8a1d73b45168139bbef0500dc"
+    },
+    "machine_calendars.csv": {
+      "rows": 4160,
+      "sha256": "114540c80682e3eec74c3dc00b05433d290fd6ecc024c219ba68a661e99aa3b9"
+    },
+    "machine_downtime.csv": {
+      "rows": 70,
+      "sha256": "3aef0692c600966ff5ab1396b273394aeb080d53b7f291b9ccfb3ae96ea7e551"
+    },
+    "machines.csv": {
+      "rows": 40,
+      "sha256": "5b60f6d6254091f7afd4a49ee70e32da331a5fa64b81aa71ebed2f035dea9980"
+    },
+    "material_requirements.csv": {
+      "rows": 2000,
+      "sha256": "502b7227f3615f99c4e1faf8400acfbab95799d965c56519c1ef07a88841ca5a"
+    },
+    "materials.csv": {
+      "rows": 200,
+      "sha256": "5a0d0e389220cfcc8b64061d11fd32915b558269aa1679aa9fb955a41d8c3588"
+    },
+    "operation_schedule.csv": {
+      "rows": 2000,
+      "sha256": "3ecd05bae5a6511a73373d32358e1bb224b11df77b436dfa45e68989656b460d"
+    },
+    "operation_tool_requirements.csv": {
+      "rows": 2000,
+      "sha256": "3507d99cf430d06929c6b52e61c7221b08f42308ffccf697a6b13b29ec37d7bb"
+    },
+    "operations.csv": {
+      "rows": 2000,
+      "sha256": "29c2d13da737e6d930a1c5404026beed1978870159064baecc8e34f6e67ce5ca"
+    },
+    "production_orders.csv": {
+      "rows": 500,
+      "sha256": "e3da686aeeae6ef58f461bf755d23502dc05deac36fe986ce0a99b319ce5de08"
+    },
+    "products.csv": {
+      "rows": 100,
+      "sha256": "b5120768edd63fe73d31436d54ed08e0279e0b72065672e83c51f7027b8cf3da"
+    },
+    "routing_operations.csv": {
+      "rows": 400,
+      "sha256": "e2a8375328d79749e5076649c815fc6ab33d2c9028f0bca76f54257d04f4884d"
+    },
+    "routings.csv": {
+      "rows": 100,
+      "sha256": "18223a14147c017c23f54fb04c93bb390de8397cd81cd5cb5f6a331c4ecbfbd0"
+    },
+    "scheduling_exceptions.csv": {
+      "rows": 0,
+      "sha256": "20114e1cc5f2241ffb354f433b039144f58f543c384bfdcd4435d4defe5efc55"
+    },
+    "tools.csv": {
+      "rows": 4,
+      "sha256": "566952989199ace84d0046861df9a99abbe106c4b2958540018986d317cefbf3"
+    }
+  },
+  "validation": {
+    "data_errors": [],
+    "schedule_errors": []
+  },
+  "counts": {
+    "scheduled_operations": 2000,
+    "exceptions": 0
+  }
+}
