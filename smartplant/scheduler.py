@@ -43,108 +43,118 @@ def prepare_inventory(data):
     return lots, balances
 
 
+
+
 def get_material_ready_time(
-    operation_id, requirements, lots, balances
+    operation_id, requirements, lots, balances, earliest_time
 ):
-    """Find when enough material will be available."""
+    """Find the earliest time all materials can be supplied from valid lots."""
 
     operation_requirements = requirements[
         requirements["operation_id"] == operation_id
     ]
 
-    ready_times = []
+    if operation_requirements.empty:
+        return earliest_time
 
-    for _, requirement in operation_requirements.iterrows():
+    # Aggregate duplicate requirement rows for the same material so the
+    # same inventory balance cannot be counted more than once.
+    grouped_requirements = (
+        operation_requirements.groupby("material_id")["required_quantity"]
+        .sum()
+    )
 
-        material_id = requirement["material_id"]
-        required_quantity = float(
-            requirement["required_quantity"]
-        )
+    candidate_times = {pd.Timestamp(earliest_time)}
+    candidate_times.update(
+        pd.Timestamp(value)
+        for value in lots.loc[
+            lots["available_at"] > earliest_time, "available_at"
+        ].dropna().tolist()
+    )
 
-        material_lots = lots[
-            lots["material_id"] == material_id
-        ].copy()
+    for candidate_time in sorted(candidate_times):
+        all_available = True
 
-        material_lots = material_lots.sort_values("available_at")
+        for material_id, required_quantity in grouped_requirements.items():
+            eligible_lots = lots[
+                (lots["material_id"] == material_id)
+                & (lots["available_at"] <= candidate_time)
+                & (
+                    lots["expiry_date"].isna()
+                    | (lots["expiry_date"] >= candidate_time)
+                )
+            ]
 
-        remaining = required_quantity
-        material_ready = None
+            available_quantity = sum(
+                balances[lot_id]
+                for lot_id in eligible_lots["lot_id"]
+            )
 
-        for _, lot in material_lots.iterrows():
-
-            lot_id = lot["lot_id"]
-            available_quantity = balances[lot_id]
-
-            if available_quantity <= 0:
-                continue
-
-            expiry = lot["expiry_date"]
-
-            if pd.notna(expiry):
-                if expiry < lot["available_at"]:
-                    continue
-
-            used = min(remaining, available_quantity)
-            remaining -= used
-
-            if remaining <= 0:
-                material_ready = lot["available_at"]
+            if available_quantity + 0.000001 < float(required_quantity):
+                all_available = False
                 break
 
-        if remaining > 0:
-            return None
+        if all_available:
+            return candidate_time
 
-        ready_times.append(material_ready)
-
-    if not ready_times:
-        return pd.Timestamp.min
-
-    return max(ready_times)
+    return None
 
 
 def consume_materials(
     operation_id, operation_start,
     requirements, lots, balances
 ):
-    """Deduct material from available inventory lots."""
+    """Atomically consume all required materials or make no deductions."""
 
     operation_requirements = requirements[
         requirements["operation_id"] == operation_id
     ]
 
-    for _, requirement in operation_requirements.iterrows():
+    if operation_requirements.empty:
+        return True
 
-        material_id = requirement["material_id"]
-        remaining = float(requirement["required_quantity"])
+    grouped_requirements = (
+        operation_requirements.groupby("material_id")["required_quantity"]
+        .sum()
+    )
 
-        material_lots = lots[
-            lots["material_id"] == material_id
-        ].sort_values("available_at")
+    allocations = []
 
-        for _, lot in material_lots.iterrows():
+    # Phase 1: prepare every allocation without changing inventory balances.
+    for material_id, required_quantity in grouped_requirements.items():
+        remaining = float(required_quantity)
 
+        eligible_lots = lots[
+            (lots["material_id"] == material_id)
+            & (lots["available_at"] <= operation_start)
+            & (
+                lots["expiry_date"].isna()
+                | (lots["expiry_date"] >= operation_start)
+            )
+        ].sort_values(["expiry_date", "available_at"])
+
+        for _, lot in eligible_lots.iterrows():
             lot_id = lot["lot_id"]
-
-            if lot["available_at"] > operation_start:
-                continue
-
-            expiry = lot["expiry_date"]
-
-            if pd.notna(expiry) and expiry < operation_start:
-                continue
-
             available_quantity = balances[lot_id]
 
             if available_quantity <= 0:
                 continue
 
             used = min(remaining, available_quantity)
-
-            balances[lot_id] -= used
+            allocations.append((lot_id, used))
             remaining -= used
 
-            if remaining <= 0:
+            if remaining <= 0.000001:
                 break
+
+        if remaining > 0.000001:
+            return False
+
+    # Phase 2: all materials are available, so commit the deductions.
+    for lot_id, quantity in allocations:
+        balances[lot_id] -= quantity
+
+    return True
 
 
 def _capacity_conflict_end(
@@ -444,7 +454,8 @@ def run_scheduler(data):
                 operation_id,
                 requirements,
                 lots,
-                balances
+                balances,
+                earliest_time
             )
 
             if material_ready is None:
@@ -605,14 +616,22 @@ def run_scheduler(data):
             operation_start = slot["operation_start"]
             operation_finish = slot["operation_finish"]
 
-            # Deduct the consumed materials.
-            consume_materials(
+            # Deduct materials only if every requirement is fulfilled.
+            materials_consumed = consume_materials(
                 operation_id,
                 operation_start,
                 requirements,
                 lots,
                 balances
             )
+
+            if not materials_consumed:
+                exception_records.append({
+                    "operation_id": operation_id,
+                    "order_id": order_id,
+                    "exception": "INSUFFICIENT_MATERIAL_STOCK"
+                })
+                continue
 
             # Update machine state.
             machine_available[machine_id] = operation_finish
