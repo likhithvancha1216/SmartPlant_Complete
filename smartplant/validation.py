@@ -90,6 +90,38 @@ def validate_schedule(data, schedule):
 
     changeovers = data["changeover_matrix"]
 
+    # Validate changeover matrix completeness and uniqueness.
+    families = set(data["products"]["family"].dropna().unique())
+
+    expected_pairs = {
+        (from_family, to_family)
+        for from_family in families
+        for to_family in families
+    }
+
+    actual_pairs = list(zip(
+        changeovers["from_family"],
+        changeovers["to_family"]
+    ))
+
+    actual_pair_set = set(actual_pairs)
+
+    missing_pairs = expected_pairs - actual_pair_set
+
+    if missing_pairs:
+        errors.append(
+            f"changeover matrix missing {len(missing_pairs)} transitions"
+        )
+
+    if changeovers.duplicated(
+        subset=["from_family", "to_family"]
+    ).any():
+        errors.append("duplicate changeover matrix transitions")
+
+    if (changeovers["changeover_minutes"] < 0).any():
+        errors.append("negative changeover duration found")
+
+
     for machine_id, group in s.groupby("machine_id"):
         ordered = group.sort_values("setup_start")
         previous_family = None
@@ -141,29 +173,178 @@ def validate_schedule(data, schedule):
             if current > capacities.get(group, 0):
                 errors.append(f"labor capacity exceeded for {group}")
                 break
-    # tool capacity
-    tool_caps = data["tools"].set_index("tool_id").quantity_available.to_dict()
+    
+    # Independent shared-tool capacity validation
+    tool_caps = (
+        data["tools"]
+        .set_index("tool_id")["quantity_available"]
+        .to_dict()
+    )
+
+    tool_states = (
+        data["tools"]
+        .set_index("tool_id")["lifecycle_state"]
+        .to_dict()
+    )
+
+    tool_requirements = data["operation_tool_requirements"].merge(
+        s[["operation_id", "operation_start", "operation_finish"]],
+        on="operation_id",
+        how="inner"
+    )
+
     tool_events = {}
-    for _, row in s.iterrows():
-        for tool_id in str(row.tool_ids).split(";"):
-            if not tool_id: continue
-            qty = int(row.tool_quantity_required)
-            tool_events.setdefault(tool_id, []).extend([(row.operation_start, qty), (row.operation_finish, -qty)])
-    for tool_id, ev in tool_events.items():
-        current = 0
-        for _, change in sorted(ev, key=lambda x: (x[0], x[1])):
-            current += change
-            if current > int(tool_caps.get(tool_id, 0)):
-                errors.append(f"tool capacity exceeded for {tool_id}")
+
+    for _, requirement in tool_requirements.iterrows():
+
+        tool_id = requirement["tool_id"]
+        quantity = int(requirement["required_quantity"])
+
+        if tool_id not in tool_caps:
+            errors.append(f"unknown tool {tool_id}")
+            continue
+
+        if tool_states.get(tool_id) != "ACTIVE":
+            errors.append(f"inactive tool {tool_id}")
+            continue
+
+        if quantity <= 0:
+            errors.append(
+                f"invalid tool quantity for {requirement['operation_id']}"
+            )
+            continue
+
+        capacity = int(tool_caps[tool_id])
+
+        if quantity > capacity:
+            errors.append(
+                f"tool requirement exceeds capacity for {tool_id}"
+            )
+            continue
+
+        tool_events.setdefault(tool_id, []).extend([
+            (requirement["operation_start"], quantity),
+            (requirement["operation_finish"], -quantity)
+        ])
+
+    # Validate each tool pool independently.
+    for tool_id, events in tool_events.items():
+
+        current_quantity = 0
+
+        # Process ending reservations before starting reservations
+        # at the same timestamp.
+        for _, quantity_change in sorted(
+            events,
+            key=lambda event: (event[0], event[1])
+        ):
+
+            current_quantity += quantity_change
+
+            if current_quantity > int(tool_caps[tool_id]):
+                errors.append(
+                    f"tool capacity exceeded for {tool_id}"
+                )
                 break
-    # material availability and aggregate inventory sufficiency
+
+            if current_quantity < 0:
+                errors.append(
+                    f"invalid tool reservation balance for {tool_id}"
+                )
+                break
+
+    
+    # Cumulative material inventory validation
     lots = data["inventory_lots"].copy()
-    lots["available_at"] = pd.to_datetime(lots.available_at)
-    lots["expiry_date"] = pd.to_datetime(lots.expiry_date, errors="coerce")
-    req = data["material_requirements"].merge(s[["operation_id", "operation_start"]], on="operation_id")
-    for _, row in req.iterrows():
-        possible = lots[(lots.material_id == row.material_id) & (lots.available_at <= row.operation_start) &
-                        (lots.expiry_date.isna() | (lots.expiry_date >= row.operation_start))]
-        if possible.quantity_on_hand.sum() < row.required_quantity:
-            errors.append(f"material unavailable at operation start for {row.operation_id}")
+
+    lots["available_at"] = pd.to_datetime(lots["available_at"])
+    lots["expiry_date"] = pd.to_datetime(
+        lots["expiry_date"], errors="coerce"
+    )
+
+    # Maintain an independent remaining balance for every inventory lot.
+    balances = {
+        row["lot_id"]: float(row["quantity_on_hand"])
+        for _, row in lots.iterrows()
+    }
+
+    # Match material requirements with their scheduled operation times.
+    scheduled_requirements = data["material_requirements"].merge(
+        s[["operation_id", "operation_start"]],
+        on="operation_id",
+        how="inner"
+    )
+
+    scheduled_requirements["operation_start"] = pd.to_datetime(
+        scheduled_requirements["operation_start"]
+    )
+
+    # Aggregate duplicate requirements for the same operation and material.
+    scheduled_requirements = (
+        scheduled_requirements.groupby(
+            ["operation_id", "operation_start", "material_id"],
+            as_index=False
+        )["required_quantity"].sum()
+    )
+
+    # Process operations chronologically and deterministically.
+    scheduled_requirements = scheduled_requirements.sort_values(
+        ["operation_start", "operation_id", "material_id"]
+    )
+
+    for _, requirement in scheduled_requirements.iterrows():
+
+        operation_id = requirement["operation_id"]
+        material_id = requirement["material_id"]
+        operation_start = requirement["operation_start"]
+        required_quantity = float(requirement["required_quantity"])
+
+        remaining = required_quantity
+
+        # Only use lots available and unexpired at consumption time.
+        eligible_lots = lots[
+            (lots["material_id"] == material_id)
+            & (lots["available_at"] <= operation_start)
+            & (
+                lots["expiry_date"].isna()
+                | (lots["expiry_date"] >= operation_start)
+            )
+        ].sort_values(
+            ["expiry_date", "available_at", "lot_id"]
+        )
+
+        # Prepare allocations without partially deducting inventory.
+        allocations = []
+
+        for _, lot in eligible_lots.iterrows():
+
+            lot_id = lot["lot_id"]
+            available_quantity = balances[lot_id]
+
+            if available_quantity <= 0:
+                continue
+
+            used = min(remaining, available_quantity)
+
+            allocations.append((lot_id, used))
+            remaining -= used
+
+            if remaining <= 0.000001:
+                break
+
+        # If the complete requirement cannot be fulfilled,
+        # report an error and do not deduct any inventory.
+        if remaining > 0.000001:
+            errors.append(
+                f"cumulative material shortage for "
+                f"{operation_id}, material {material_id}: "
+                f"required {required_quantity}, "
+                f"shortage {remaining:.4f}"
+            )
+            continue
+
+        # Commit inventory deductions only after full allocation.
+        for lot_id, quantity in allocations:
+            balances[lot_id] -= quantity
+
     return errors

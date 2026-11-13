@@ -145,3 +145,75 @@ def test_detects_missing_changeover():
             previous_family = current_family
 
     assert False, "No positive-duration family transition was found"
+
+def test_detects_shared_tool_capacity_exceeded():
+    data, schedule = load_test_data()
+
+    requirements = data["operation_tool_requirements"]
+
+    # Find a tool used by at least two operations.
+    tool_groups = requirements.groupby("tool_id")
+
+    selected_tool = None
+    selected_operations = None
+
+    for tool_id, group in tool_groups:
+        if len(group) >= 2:
+            selected_tool = tool_id
+            selected_operations = group.head(2)
+            break
+
+    assert selected_tool is not None
+
+    operation_ids = selected_operations["operation_id"].tolist()
+
+    capacity = int(
+        data["tools"].loc[
+            data["tools"]["tool_id"] == selected_tool,
+            "quantity_available"
+        ].iloc[0]
+    )
+
+    assert capacity == 2
+
+    # Make both operations require two units.
+    data["operation_tool_requirements"].loc[
+        data["operation_tool_requirements"]["operation_id"].isin(operation_ids),
+        "required_quantity"
+    ] = capacity
+
+    # Find their schedule rows.
+    first_index = schedule.index[
+        schedule["operation_id"] == operation_ids[0]
+    ][0]
+
+    second_index = schedule.index[
+        schedule["operation_id"] == operation_ids[1]
+    ][0]
+
+    # Give both operations the same time interval.
+    common_start = pd.Timestamp("2026-11-18 10:00:00")
+    common_finish = pd.Timestamp("2026-11-18 11:00:00")
+
+    schedule.loc[[first_index, second_index], "operation_start"] = common_start
+    schedule.loc[[first_index, second_index], "operation_finish"] = common_finish
+
+    errors = validate_schedule(data, schedule)
+
+    assert any(
+        "tool capacity exceeded" in str(error).lower()
+        for error in errors
+    ), f"Expected tool capacity error, got: {errors}"
+    def test_detects_missing_changeover_matrix_transition():
+        data, schedule = load_test_data()
+
+        data["changeover_matrix"] = (
+            data["changeover_matrix"].iloc[1:].copy()
+        )
+
+        errors = validate_schedule(data, schedule)
+
+        assert any(
+            "changeover matrix missing" in error
+            for error in errors
+        )
