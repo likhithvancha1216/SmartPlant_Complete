@@ -232,6 +232,32 @@ http://localhost:8501
 
 The dashboard provides production KPIs, operation breakdowns, machine workload information, schedule exploration, and data downloads.
 
+---
+
+## Application Screenshots
+
+### 1. Dashboard Overview
+
+Overview of production KPIs, machine workload, and manufacturing operations.
+
+![SmartPlant Dashboard](docs/images/dashboard-overview.png)
+
+### 2. Schedule Explorer
+
+Explore scheduled operations, machine assignments, priorities, and production timelines.
+
+![SmartPlant Schedule Explorer](docs/images/schedule-explorer.png)
+
+### 3. Validation Results
+
+View scheduling validation results and exception information.
+
+![SmartPlant Validation Results](docs/images/validation-results.png)
+
+---
+
+
+
 ## 10. Run Validation
 
 Run the independent validation modules:
